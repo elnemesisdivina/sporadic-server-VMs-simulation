@@ -1,0 +1,29 @@
+{
+  "_comment": "Escenario PLANIFICABLE para 5 Micro-VMs en Proxmox VE 9.1-1: 4 Tareas Periódicas (VM 101..104) + Servidor Esporádico (VM 105). U_total = 38/60 ≈ 0.6333 <= U_LL(5) ≈ 0.7435. Todas las tareas cumplen RTA (R_i <= D_i) con 0 violaciones de plazo.",
+  "horizon": 30.0,
+  "dt": 0.1,
+  "periodic_tasks": [
+    {"name": "$\\tau_1$", "task_id": "tau1", "vm_id": 101, "vm_ip": "10.10.10.101", "priority": 5, "compute_time": 1.0, "deadline": 6.0,  "period": 6.0,  "color": "#0072B2"},
+    {"name": "$\\tau_2$", "task_id": "tau2", "vm_id": 102, "vm_ip": "10.10.10.102", "priority": 4, "compute_time": 1.0, "deadline": 10.0, "period": 10.0, "color": "#009E73"},
+    {"name": "$\\tau_3$", "task_id": "tau3", "vm_id": 103, "vm_ip": "10.10.10.103", "priority": 2, "compute_time": 1.5, "deadline": 15.0, "period": 15.0, "color": "#CC79A7"},
+    {"name": "$\\tau_4$", "task_id": "tau4", "vm_id": 104, "vm_ip": "10.10.10.104", "priority": 1, "compute_time": 2.0, "deadline": 20.0, "period": 20.0, "color": "#E69F00"}
+  ],
+  "server": {
+    "name": "$S_s$",
+    "vm_id": 105,
+    "vm_ip": "10.10.10.105",
+    "priority": 3,
+    "budget": 2.0,
+    "period": 12.0,
+    "deadline": 12.0,
+    "color": "#16a085"
+  },
+  "aperiodic_jobs": [
+    {"name": "J1", "arrival_time": 2.0,  "compute_time": 1.0},
+    {"name": "J2", "arrival_time": 5.0,  "compute_time": 1.0},
+    {"name": "J3", "arrival_time": 9.0,  "compute_time": 2.0},
+    {"name": "J4", "arrival_time": 13.0, "compute_time": 1.0},
+    {"name": "J5", "arrival_time": 17.0, "compute_time": 1.5},
+    {"name": "J6", "arrival_time": 22.0, "compute_time": 1.0}
+  ]
+}
