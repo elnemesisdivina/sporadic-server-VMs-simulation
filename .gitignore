@@ -5,3 +5,7 @@ __pycache__/
 venv/
 .DS_Store
 *.swp
+sporadic_server_simulation.png
+sporadic_server_interactive.html
+proxmox_*_trace.csv
+proxmox_*_data.json
