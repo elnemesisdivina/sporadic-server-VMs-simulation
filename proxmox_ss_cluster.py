@@ -255,6 +255,158 @@ class PeriodicWorkerNode:
 # ==============================================================================
 
 
+def _build_live_portal_html() -> str:
+  """Construye el Portal Web en Vivo servido por la Micro-VM 105 en GET / (:8080)."""
+  return """<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Proxmox VE 9.1-1 — Monitor en Vivo del Servidor Esporádico (VM 105)</title>
+  <style>
+    :root { --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --muted: #94a3b8; --accent: #14b8a6; --warn: #ef4444; --blue: #38bdf8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); padding: 1.5rem; }
+    .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 1rem; }
+    .badge { background: #0f766e; color: #ccfbf1; padding: 0.35rem 0.75rem; border-radius: 999px; font-size: 0.85rem; font-weight: 600; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 1rem; margin-bottom: 1.25rem; }
+    .card { background: var(--card); border: 1px solid #334155; border-radius: 0.75rem; padding: 1.15rem; }
+    .card h3 { margin: 0 0 0.75rem 0; font-size: 0.95rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .big-val { font-size: 1.65rem; font-weight: 700; margin-bottom: 0.35rem; }
+    .bar-wrap { width: 100%; height: 14px; background: #0f172a; border-radius: 7px; overflow: hidden; border: 1px solid #334155; }
+    .bar-fill { height: 100%; background: linear-gradient(90deg, #14b8a6, #38bdf8); transition: width 0.25s ease; }
+    .vm-list { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.65rem; margin-bottom: 1.25rem; }
+    .vm-box { background: var(--card); border: 2px solid #334155; border-radius: 0.65rem; padding: 0.85rem; text-align: center; transition: all 0.2s; }
+    .vm-box.active { border-color: #14b8a6; background: #134e4a; box-shadow: 0 0 16px rgba(20, 184, 166, 0.35); }
+    .vm-title { font-weight: 700; font-size: 0.95rem; }
+    .vm-sub { font-size: 0.8rem; color: var(--muted); margin: 0.25rem 0 0.5rem 0; }
+    .cpu-pill { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.8rem; font-weight: 700; background: #0f172a; color: #64748b; }
+    .vm-box.active .cpu-pill { background: #10b981; color: #052e16; }
+    .btn { background: var(--accent); color: #042f2e; border: none; padding: 0.6rem 1.1rem; border-radius: 0.5rem; font-weight: 700; cursor: pointer; text-decoration: none; display: inline-block; }
+    .btn-blue { background: var(--blue); color: #082f49; }
+    input { background: #0f172a; border: 1px solid #475569; color: var(--text); padding: 0.5rem 0.75rem; border-radius: 0.4rem; margin-right: 0.5rem; }
+    #artifacts-panel { display: none; margin-top: 1.25rem; }
+    @media (max-width: 900px) { .vm-list { grid-template-columns: 1fr 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1 style="margin:0;font-size:1.4rem;">🚀 Clúster Proxmox VE 9.1-1 — Servidor Esporádico (VM 105)</h1>
+      <div style="color:var(--muted);font-size:0.9rem;margin-top:0.25rem;">Maintainer: Ray &lt;elnemesisdivina@gmail.com&gt; | 5 Stripped KVM Micro-VMs (Cores #1..#5)</div>
+    </div>
+    <div>
+      <span id="sim-badge" class="badge">⏳ Conectando con VM 105...</span>
+      <a href="/dashboard" class="btn btn-blue" style="margin-left:0.5rem;">📊 Abrir Dashboard Interactivo HTML5 (/dashboard)</a>
+    </div>
+  </div>
+
+  <div class="vm-list">
+    <div id="vm-tau1" class="vm-box"><div class="vm-title">VM 101 (vm1-tau1)</div><div class="vm-sub">τ₁ | P₁=5 (Máx) | Core #1</div><span class="cpu-pill">0% CPU</span></div>
+    <div id="vm-tau2" class="vm-box"><div class="vm-title">VM 102 (vm2-tau2)</div><div class="vm-sub">τ₂ | P₂=4 (Alta) | Core #2</div><span class="cpu-pill">0% CPU</span></div>
+    <div id="vm-ss"   class="vm-box"><div class="vm-title">VM 105 (vm5-ss)</div><div class="vm-sub">Sₛ | Pₛ=3 (Server) | Core #5</div><span class="cpu-pill">0% CPU</span></div>
+    <div id="vm-tau3" class="vm-box"><div class="vm-title">VM 103 (vm3-tau3)</div><div class="vm-sub">τ₃ | P₃=2 (Media) | Core #3</div><span class="cpu-pill">0% CPU</span></div>
+    <div id="vm-tau4" class="vm-box"><div class="vm-title">VM 104 (vm4-tau4)</div><div class="vm-sub">τ₄ | P₄=1 (Mín) | Core #4</div><span class="cpu-pill">0% CPU</span></div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>⏱️ Reloj Lógico y Micro-VM en CPU</h3>
+      <div id="val-time" class="big-val">t = 0.00 / 30.0 s</div>
+      <div class="bar-wrap"><div id="bar-time" class="bar-fill" style="width:0%"></div></div>
+      <div id="val-vm" style="margin-top:0.6rem;color:var(--blue);font-weight:600;">Activa: Idle</div>
+    </div>
+    <div class="card">
+      <h3>🔋 Presupuesto del Servidor Esporádico Cₛ(t)</h3>
+      <div id="val-budget" class="big-val">2.00 / 2.00 u</div>
+      <div class="bar-wrap"><div id="bar-budget" class="bar-fill" style="width:100%"></div></div>
+      <div id="val-repl" style="margin-top:0.6rem;color:var(--muted);font-size:0.9rem;">Ventana t_A: — | Próx. Recarga t_R: —</div>
+    </div>
+    <div class="card">
+      <h3>📥 Cola Aperiódica FIFO y Plazos</h3>
+      <div id="val-queue" class="big-val">Cola: 0 trabajos | Misses: 0</div>
+      <form id="job-form" style="margin-top:0.6rem;" onsubmit="return sendJob(event);">
+        <input type="text" id="jname" placeholder="Nombre (ej. J_live)" value="J_urgente" style="width:120px;" required />
+        <input type="number" id="jwork" step="0.1" min="0.1" max="10.0" value="1.5" style="width:80px;" required />
+        <button type="submit" class="btn">⚡ Inyectar Jₖ</button>
+      </form>
+      <div id="job-msg" style="font-size:0.82rem;color:#34d399;margin-top:0.35rem;"></div>
+    </div>
+  </div>
+
+  <div id="artifacts-panel" class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;margin-bottom:1rem;">
+      <h3 style="margin:0;color:#34d399;">✅ Simulación Completada — Diagrama de Gantt y Curva Cₛ(t) Generados en VM 105</h3>
+      <div>
+        <a href="/dashboard" class="btn btn-blue">🔍 Ver Dashboard Interactivo HTML5 Completo</a>
+        <a href="/gantt.png" download="sporadic_server_simulation.png" class="btn" style="margin-left:0.5rem;">⬇️ Guardar PNG</a>
+      </div>
+    </div>
+    <img id="gantt-img" src="" alt="Diagrama de Gantt y Presupuesto Cs(t)" style="width:100%;border-radius:0.5rem;border:1px solid #334155;" />
+  </div>
+
+  <script>
+    let artifactsLoaded = false;
+    async function sendJob(ev) {
+      ev.preventDefault();
+      const name = document.getElementById('jname').value || 'J_live';
+      const work = document.getElementById('jwork').value || '1.0';
+      const r = await fetch(`/job?name=${encodeURIComponent(name)}&work=${encodeURIComponent(work)}`);
+      const d = await r.json();
+      document.getElementById('job-msg').textContent = d.status === 'enqueued'
+        ? `✔ Trabajo ${d.name} (C=${d.compute_time}) encolado en VM 105`
+        : `❌ Error: ${d.error}`;
+      return false;
+    }
+    function highlightVM(runner, job) {
+      const map = {'$\\tau_1$':'vm-tau1','tau1':'vm-tau1','$\\tau_2$':'vm-tau2','tau2':'vm-tau2','$\\tau_3$':'vm-tau3','tau3':'vm-tau3','$\\tau_4$':'vm-tau4','tau4':'vm-tau4','$S_s$':'vm-ss','S_s':'vm-ss'};
+      ['vm-tau1','vm-tau2','vm-ss','vm-tau3','vm-tau4'].forEach(id => {
+        const el = document.getElementById(id);
+        el.classList.remove('active');
+        el.querySelector('.cpu-pill').textContent = '0% CPU (SIGSTOP)';
+      });
+      const activeId = map[runner];
+      if (activeId) {
+        const el = document.getElementById(activeId);
+        el.classList.add('active');
+        el.querySelector('.cpu-pill').textContent = job ? `100% CPU (${job})` : '100% CPU (SIGCONT)';
+      }
+    }
+    async function pollStatus() {
+      try {
+        const r = await fetch('/status');
+        const s = await r.json();
+        const pctTime = Math.min(100, (s.logical_time / (s.horizon || 30.0)) * 100);
+        document.getElementById('val-time').textContent = `t = ${s.logical_time.toFixed(1)} / ${(s.horizon || 30.0).toFixed(1)} s`;
+        document.getElementById('bar-time').style.width = `${pctTime}%`;
+        document.getElementById('val-vm').textContent = `Activa: ${s.active_vm || s.active_runner}`;
+        const pctBudget = Math.min(100, (s.budget / (s.max_budget || 2.0)) * 100);
+        document.getElementById('val-budget').textContent = `${s.budget.toFixed(2)} / ${(s.max_budget || 2.0).toFixed(2)} u`;
+        document.getElementById('bar-budget').style.width = `${pctBudget}%`;
+        document.getElementById('val-repl').textContent = `Ventana t_A: ${s.t_a !== null ? s.t_a + 's' : 'Cerrada'} | Próx. Recarga t_R: ${s.next_replenishment !== null ? s.next_replenishment + 's' : '—'}`;
+        document.getElementById('val-queue').textContent = `Cola: ${s.queue_len} | Misses: ${s.deadline_misses_count}`;
+        document.getElementById('val-queue').style.color = s.deadline_misses_count > 0 ? '#ef4444' : '#f8fafc';
+        highlightVM(s.active_runner, s.active_job);
+        const badge = document.getElementById('sim-badge');
+        if (s.simulation_finished) {
+          badge.textContent = '✅ Simulación Concluida en VM 105';
+          badge.style.background = '#065f46';
+        } else {
+          badge.textContent = '🟢 Ejecutando en Vivo en Clúster Proxmox';
+        }
+        if (s.artifacts_ready && !artifactsLoaded) {
+          artifactsLoaded = true;
+          document.getElementById('artifacts-panel').style.display = 'block';
+          document.getElementById('gantt-img').src = '/gantt.png?t=' + Date.now();
+        }
+      } catch (e) {}
+    }
+    setInterval(pollStatus, 400);
+    pollStatus();
+  </script>
+</body>
+</html>"""
+
+
 class SporadicServerCoordinator:
   """Coordinador RM y Servidor Esporádico (S_s) ejecutado en la Micro-VM 105.
 
@@ -311,28 +463,61 @@ class SporadicServerCoordinator:
     self._live_jobs_lock = threading.Lock()
     self._live_injected_jobs: list[tuple[str, float]] = []
 
-    # Estado en vivo consultable vía HTTP GET /status
+    # Estado en vivo consultable vía HTTP GET /status y Portal Web (GET /)
     self._status_lock = threading.Lock()
     self._live_status: dict[str, Any] = {
         "logical_time": 0.0,
+        "horizon": self.horizon,
         "active_runner": "Idle",
+        "active_vm": "Idle (0% CPU)",
         "active_job": "",
         "budget": self.server_config.budget,
         "max_budget": self.server_config.budget,
         "is_active": False,
         "t_a": None,
+        "next_replenishment": None,
         "queue_len": 0,
         "deadline_misses_count": 0,
         "registered_workers": [],
+        "simulation_finished": False,
+        "artifacts_ready": False,
     }
 
+    self._dashboard_html_path: Optional[str] = None
+    self._gantt_png_path: Optional[str] = None
     self._http_server: Optional[ThreadingHTTPServer] = None
     self._http_thread: Optional[threading.Thread] = None
 
-  # ── Servidor HTTP de Inyección Aperiódica en Vivo (:8080) ──────────────────
+  def register_artifacts(
+      self,
+      html_path: Optional[str] = None,
+      png_path: Optional[str] = None,
+  ) -> None:
+    """Registra las rutas del Dashboard HTML5 y PNG generados para servirlos en :8080."""
+    self._dashboard_html_path = html_path
+    self._gantt_png_path = png_path
+    with self._status_lock:
+      self._live_status["artifacts_ready"] = bool(
+          (html_path and os.path.isfile(html_path))
+          or (png_path and os.path.isfile(png_path))
+      )
+
+  def _runner_to_vm_label(self, runner_name: str, job_label: str = "") -> str:
+    """Traduce el nombre de tarea al identificador de Micro-VM en Proxmox."""
+    if runner_name == "Idle":
+      return "Idle (Todas las VMs al 0% CPU)"
+    if runner_name == self.server_config.name:
+      suffix = f" -> {job_label}" if job_label else ""
+      return f"VM 105 (vm5-ss{suffix}) [100% CPU]"
+    tid = self.name_to_id.get(runner_name, "")
+    vm_num = {"tau1": 101, "tau2": 102, "tau3": 103, "tau4": 104}.get(tid, 100)
+    idx = vm_num - 100
+    return f"VM {vm_num} (vm{idx}-{tid}) [100% CPU]"
+
+  # ── Servidor HTTP de Portal en Vivo, Dashboard y API (:8080) ───────────────
 
   def start_http_server(self) -> int:
-    """Inicia el servidor HTTP en segundo plano para recibir /job y /status.
+    """Inicia el servidor HTTP en segundo plano para /, /dashboard, /gantt.png, /job y /status.
 
     Returns:
       Puerto TCP real en el que escucha el servidor HTTP.
@@ -351,8 +536,48 @@ class SporadicServerCoordinator:
         self.end_headers()
         self.wfile.write(body)
 
+      def _send_html(self, code: int, html_text: str) -> None:
+        body = html_text.encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
       def do_GET(self) -> None:  # pylint: disable=invalid-name
         parsed = urlparse(self.path)
+        if parsed.path in ("/", "/index.html"):
+          self._send_html(200, _build_live_portal_html())
+          return
+
+        if parsed.path == "/dashboard":
+          if coord._dashboard_html_path and os.path.isfile(coord._dashboard_html_path):
+            with open(coord._dashboard_html_path, "r", encoding="utf-8") as f:
+              self._send_html(200, f.read())
+          else:
+            self._send_html(
+                202,
+                "<html><body style='background:#0f172a;color:#f8fafc;font-family:sans-serif;padding:2rem;'>"
+                "<h2>⏳ Simulación en curso en el Clúster Proxmox...</h2>"
+                "<p>El Dashboard interactivo HTML5 completo estará disponible automáticamente al concluir el horizonte. "
+                "<a href='/' style='color:#38bdf8;'>Volver al Monitor en Vivo</a></p>"
+                "<script>setTimeout(()=>location.reload(), 2000);</script></body></html>",
+            )
+          return
+
+        if parsed.path == "/gantt.png":
+          if coord._gantt_png_path and os.path.isfile(coord._gantt_png_path):
+            with open(coord._gantt_png_path, "rb") as f:
+              body = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+          else:
+            self._send_json(404, {"error": "Gantt PNG aún no generado."})
+          return
+
         if parsed.path == "/status":
           with coord._status_lock:
             snap = dict(coord._live_status)
@@ -382,7 +607,10 @@ class SporadicServerCoordinator:
           )
           return
 
-        self._send_json(404, {"error": "Ruta no encontrada. Usar /job o /status"})
+        self._send_json(
+            404,
+            {"error": "Ruta no encontrada. Usar /, /dashboard, /gantt.png, /job o /status"},
+        )
 
       def do_POST(self) -> None:  # pylint: disable=invalid-name
         parsed = urlparse(self.path)
@@ -518,10 +746,9 @@ class SporadicServerCoordinator:
     elif new_runner in self.name_to_id:
       self._send_worker_cmd(self.name_to_id[new_runner], "GRANT_CPU", logical_time)
 
-  def close_all(self) -> None:
-    """Cierra el quemador local, el servidor HTTP y envía SHUTDOWN a las 4 Micro-VMs."""
+  def close_workers_and_burner(self) -> None:
+    """Cierra el quemador local y envía SHUTDOWN a las 4 Micro-VMs sin apagar el HTTP :8080."""
     self.server_burner.close()
-    self.stop_http_server()
     with self._workers_lock:
       worker_ids = list(self._workers.keys())
     for tid in worker_ids:
@@ -539,6 +766,11 @@ class SporadicServerCoordinator:
       except OSError:
         pass
       self._tcp_server = None
+
+  def close_all(self) -> None:
+    """Cierra el quemador local, el servidor HTTP y envía SHUTDOWN a las 4 Micro-VMs."""
+    self.close_workers_and_burner()
+    self.stop_http_server()
 
   # ── Motor Principal de Simulación Distribuida (Sprunt-Sha-Lehoczky / Buttazzo)
 
@@ -710,17 +942,42 @@ class SporadicServerCoordinator:
         self._dispatch_cpu_token(current_holder, runner_name, current_time)
         current_holder = runner_name
 
+        future_repls = [rt for rt in pending_replenishments if rt > k]
+        next_rep_t = (
+            round(min(future_repls) * self.dt, 2) if future_repls else None
+        )
+        vm_label = self._runner_to_vm_label(runner_name, job_label)
+
         with self._status_lock:
           self._live_status.update({
               "logical_time": round(current_time, 2),
               "active_runner": runner_name,
+              "active_vm": vm_label,
               "active_job": job_label,
               "budget": round(budget_ticks * self.dt, 4),
               "is_active": is_active,
               "t_a": round(t_a_tick * self.dt, 2) if t_a_tick is not None else None,
+              "next_replenishment": next_rep_t,
               "queue_len": len(aperiodic_queue),
               "deadline_misses_count": len(deadline_misses),
           })
+
+        # Telemetría en vivo tick a tick en la consola de Proxmox (>_ Shell)
+        if self.time_scale > 0:
+          b_cur = budget_ticks * self.dt
+          b_max = self.server_config.budget
+          filled = int(round((b_cur / b_max) * 8)) if b_max > 0 else 0
+          b_bar = "█" * filled + "░" * (8 - filled)
+          ta_str = f"{t_a_tick * self.dt:4.1f}s" if t_a_tick is not None else "  —  "
+          tr_str = f"{next_rep_t:4.1f}s" if next_rep_t is not None else "  —  "
+          print(
+              f"\r⚡ [t={current_time:5.1f}/{self.horizon:4.1f}s] "
+              f"{vm_label:<32} | C_s:[{b_bar}] {b_cur:3.1f}/{b_max:3.1f} "
+              f"| t_A:{ta_str} | t_R:{tr_str} | Cola:{len(aperiodic_queue)} "
+              f"| Miss:{len(deadline_misses)}",
+              end="",
+              flush=True,
+          )
 
         # Esperar la duración física del tick escalado (--time-scale K)
         if tick_wall_duration > 0:
@@ -789,6 +1046,16 @@ class SporadicServerCoordinator:
 
     finally:
       self._dispatch_cpu_token(current_holder, "Idle", self.horizon)
+      if self.time_scale > 0:
+        print()  # Salto de línea limpio tras la barra de telemetría en vivo
+      with self._status_lock:
+        self._live_status.update({
+            "logical_time": round(self.horizon, 2),
+            "active_runner": "Idle",
+            "active_vm": "Idle (Simulación Concluida)",
+            "active_job": "",
+            "simulation_finished": True,
+        })
 
     # Consolidar rebanadas contiguas (ExecutionSlice) y totales de CPU
     slices: list[ssim.ExecutionSlice] = []
@@ -988,6 +1255,11 @@ def main() -> None:
       action="store_true",
       help="Ejecutar en modo headless sin abrir ventana GUI de Matplotlib.",
   )
+  parser.add_argument(
+      "--no-serve",
+      action="store_true",
+      help="Finalizar inmediatamente tras generar gráficas sin mantener el portal HTTP :8080 activo.",
+  )
   args = parser.parse_args()
 
   if args.role == "worker":
@@ -1048,7 +1320,7 @@ def main() -> None:
   http_port = coord.start_http_server()
   print(
       f"[+] Servidor Esporádico activo | TCP Control: :{tcp_port} | "
-      f"HTTP Trigger: http://0.0.0.0:{http_port}/job?name=J_live&work=1.5"
+      f"Portal Web en Vivo: http://localhost:{http_port}/"
   )
 
   local_threads: list[threading.Thread] = []
@@ -1074,24 +1346,42 @@ def main() -> None:
     )
     result = coord.run()
   finally:
-    coord.close_all()
+    coord.close_workers_and_burner()
     for t in local_threads:
       t.join(timeout=2.0)
 
-  ssim.print_summary(result)
-  ssim.plot_simulation(
-      result,
-      output_path=args.output,
-      show=not args.no_show,
-      horizon=horizon,
-      periodic_tasks=periodic_tasks,
-      server_config=server_config,
-      interactive_html=args.html,
-  )
-  if args.export_csv:
-    ssim.export_trace_to_csv(result, args.export_csv)
-  if args.export_json:
-    ssim.export_trace_to_json(result, args.export_json)
+  try:
+    ssim.print_summary(result)
+    ssim.plot_simulation(
+        result,
+        output_path=args.output,
+        show=not args.no_show,
+        horizon=horizon,
+        periodic_tasks=periodic_tasks,
+        server_config=server_config,
+        interactive_html=args.html,
+    )
+    if args.export_csv:
+      ssim.export_trace_to_csv(result, args.export_csv)
+    if args.export_json:
+      ssim.export_trace_to_json(result, args.export_json)
+
+    coord.register_artifacts(html_path=args.html, png_path=args.output)
+    if args.time_scale > 0 and not args.no_serve:
+      print(
+          f"\n\033[92m[🌐] Portal en Vivo, Dashboard HTML5 y Gantt servidos desde VM 105 en:\n"
+          f"    - Monitor y Resumen : http://localhost:{http_port}/\n"
+          f"    - Dashboard HTML5   : http://localhost:{http_port}/dashboard\n"
+          f"    - Diagrama de Gantt : http://localhost:{http_port}/gantt.png\n"
+          f"    (Presionar Ctrl+C para detener el servidor web)\033[0m"
+      )
+      try:
+        while True:
+          time.sleep(1.0)
+      except KeyboardInterrupt:
+        print("\n[*] Cerrando servidor web del Servidor Esporádico...")
+  finally:
+    coord.stop_http_server()
 
 
 if __name__ == "__main__":

@@ -213,7 +213,11 @@ class ProxmoxSporadicServerClusterTest(unittest.TestCase):
     try:
       coord.wait_for_workers(timeout=5.0)
 
-      # Consultar /status y disparar /job?name=J_urgente&work=0.5 por HTTP
+      # Consultar portal en vivo (/), /status y disparar /job?name=J_urgente&work=0.5 por HTTP
+      with urlopen(f"http://127.0.0.1:{http_port}/", timeout=2.0) as resp:
+        portal_html = resp.read().decode("utf-8")
+        self.assertIn("Clúster Proxmox VE 9.1-1", portal_html)
+
       with urlopen(f"http://127.0.0.1:{http_port}/status", timeout=2.0) as resp:
         status_data = json.loads(resp.read().decode("utf-8"))
         self.assertEqual(len(status_data["registered_workers"]), 4)

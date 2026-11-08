@@ -38,9 +38,8 @@
    * [Paso 1: Creación Automatizada desde Cero en el Host Proxmox 9.1-1 (`setup_proxmox_vms.sh`)](#paso-1-creación-automatizada-desde-cero-en-el-host-proxmox-91-1-setup_proxmox_vmssh)
    * [Paso 2: Despliegue Automático del Código desde el Host Proxmox hacia las 5 Micro-VMs](#paso-2-despliegue-automático-del-código-desde-el-host-proxmox-hacia-las-5-micro-vms)
    * [Paso 3: Iniciar el Servidor Esporádico y Coordinador en la Micro-VM 105](#paso-3-iniciar-el-servidor-esporádico-y-coordinador-en-la-micro-vm-105)
-   * [Paso 4: (Opcional) Disparar Peticiones Aperiódicas en Vivo a través del Túnel SSH](#paso-4-opcional-disparar-peticiones-aperiódicas-en-vivo-a-través-del-túnel-ssh)
-   * [Paso 5: Descargar los Resultados y Gráficas Generadas al Equipo Local](#paso-5-descargar-los-resultados-y-gráficas-generadas-al-equipo-local)
-   * [Paso 6: Limpieza Total del Clúster en Proxmox (`--cleanup`)](#paso-6-limpieza-total-del-clúster-en-proxmox---cleanup)
+   * [Paso 4: Visualización en Vivo desde Proxmox (`:1234`) y el Dashboard Web de la VM 105 (`:8080`)](#paso-4-visualización-en-vivo-desde-proxmox-1234-y-el-dashboard-web-de-la-vm-105-8080)
+   * [Paso 5: Limpieza Total del Clúster en Proxmox (`--cleanup`)](#paso-5-limpieza-total-del-clúster-en-proxmox---cleanup)
 9. [Autoría y Licencia](#9-autoría-y-licencia)
 
 ---
@@ -303,23 +302,16 @@ En cada una de las 5 Micro-VMs se inicia un subproceso dedicado en Python puro (
      * `{"type": "PREEMPT_CPU", "logical_time": 6.0}` $\rightarrow$ La VM desalojada congela su `CPUBurnerProcess` (`SIGSTOP`).
      * `{"type": "SHUTDOWN"}` $\rightarrow$ Al finalizar el horizonte de simulación, detiene limpiamente los demonios.
 
-### 6.3 Inyección de Trabajos Aperiódicos ($J_k$): Automática + En Vivo
-1. **Modo Escenario JSON Automático:** Lee `aperiodic_jobs` desde `proxmox_schedulable.json` e inyecta $J_1 \dots J_6$ en los instantes exactos $r_k$.
-2. **Modo Inyección en Vivo (HTTP / CLI):** `vm5-sporadic-server` expone un servidor HTTP ligero en el puerto `8080`. Desde cualquier terminal (equipo local vía túnel SSH, el host Proxmox o cualquiera de las VMs) es posible disparar un trabajo aperiódico con un solo comando:
-   ```bash
-   # Inyectar un trabajo aperiódico de 1.5 unidades de cómputo en cualquier momento:
-   curl "http://<IP-VM5>:8080/job?name=J_extra&work=1.5"
+### 6.3 Portal Web en Vivo, Dashboard HTML5 e Inyección de Trabajos Aperiódicos ($J_k$)
+1. **Modo Escenario JSON Automático:** Lee `aperiodic_jobs` desde `proxmox_schedulable.json` (o `proxmox_unschedulable.json`) e inyecta $J_1 \dots J_6$ en los instantes exactos $r_k$.
+2. **Portal Web en Vivo y Dashboard Integrado en la Micro-VM 105 (`http://localhost:8080/`):** `vm5-sporadic-server` levanta un servidor web ligero en el puerto `8080` accesible directamente desde el navegador local a través del túnel SSH (`-L 8080:10.10.10.105:8080`), sin necesidad de descargar archivos manualmente por `scp`:
+   * **`GET /` (`http://localhost:8080/`):** Portal en tiempo real que muestra las 5 Micro-VMs (`101..105`) con su estado `100% CPU` vs. `0% CPU`, barra en vivo del presupuesto $C_s(t)$, ventana activa $t_A$, próxima recarga $t_R = t_A + T_s$, contador de *Deadline Misses* y un formulario interactivo para **inyectar trabajos aperiódicos ($J_k$) con un clic**.
+   * **`GET /dashboard` (`http://localhost:8080/dashboard`):** Sirve directamente en el navegador el **Dashboard Interactivo HTML5/SVG** generado en la VM 105.
+   * **`GET /gantt.png` (`http://localhost:8080/gantt.png`):** Sirve directamente el diagrama de Gantt y la curva de presupuesto $C_s(t)$ en alta resolución.
+   * **`GET /job` y `GET /status`:** Endpoints JSON para automatización o disparo por CLI (`curl "http://localhost:8080/job?name=J_extra&work=1.5"`).
 
-   # Consultar el estado en vivo del Servidor Esporádico (presupuesto C_s, cola, VM activa):
-   curl "http://<IP-VM5>:8080/status"
-   ```
-
-### 6.4 Integración Directa con el Visualizador del Repositorio Base
-Al concluir la ejecución sobre las 5 Micro-VMs de Proxmox, `vm5-sporadic-server` empaqueta la traza real ejecutada por las VMs en un objeto `SimulationResult` idéntico al de [`sporadic_server_sim.py`](https://github.com/elnemesisdivina/sporadic-server-simulation/blob/main/sporadic_server_sim.py) e invoca automáticamente las funciones de reporte:
-* `compute_schedulability(...)` y `print_summary(...)` (Tabla RTA y tiempos de respuesta en consola).
-* `plot_simulation(...)` $\rightarrow$ genera `sporadic_server_simulation.png` (Diagrama de Gantt + curva $C_s(t)$).
-* `export_interactive_html(...)` $\rightarrow$ genera `sporadic_server_interactive.html` (Dashboard interactivo HTML5/SVG).
-* `export_csv(...)` y `export_json(...)` $\rightarrow$ genera las trazas auditables.
+### 6.4 Telemetría CLI en Vivo (`>_ Shell` de Proxmox) e Integración con `sporadic_server_sim.py`
+Durante la corrida en vivo (`--time-scale K`), `vm5-sporadic-server` actualiza tick a tick una barra de estado en la consola de Proxmox (`>_ Shell`) indicando el reloj lógico $t$, la Micro-VM activa al `100% CPU`, la barra de presupuesto $C_s(t)$, los instantes $t_A$ / $t_R$ y las violaciones de plazo. Al concluir el horizonte, empaqueta la traza real en un objeto `SimulationResult` idéntico al de [`sporadic_server_sim.py`](https://github.com/elnemesisdivina/sporadic-server-simulation/blob/main/sporadic_server_sim.py), imprime la tabla RTA en consola y publica automáticamente el Dashboard HTML5 y el diagrama PNG en `http://localhost:8080/`.
 
 ---
 
@@ -327,11 +319,11 @@ Al concluir la ejecución sobre las 5 Micro-VMs de Proxmox, `vm5-sporadic-server
 
 | Archivo | Rol y Descripción |
 | :--- | :--- |
-| **`proxmox_ss_cluster.py`** | Script principal unificado: opera como **Coordinador + Servidor Esporádico** (`--role server` en VM 105) o como **Nodo de Tarea Periódica** (`--role worker --task-id tau1..tau4` en VMs 101–104), incluye el quemador de CPU real (`SIGSTOP`/`SIGCONT`), el endpoint HTTP `:8080` para trabajos aperiódicos en vivo y la exportación a PNG/HTML/CSV/JSON mediante `sporadic_server_sim.py`. |
+| **`proxmox_ss_cluster.py`** | Script principal unificado: opera como **Coordinador + Servidor Esporádico** (`--role server` en VM 105) o como **Nodo de Tarea Periódica** (`--role worker --task-id tau1..tau4` en VMs 101–104), incluye el quemador de CPU real (`SIGSTOP`/`SIGCONT`), telemetría CLI en vivo y el portal web en el puerto `:8080` (`/`, `/dashboard`, `/gantt.png`, `/job`, `/status`). |
 | **`proxmox_schedulable.json`** | Configuración JSON para las 4 Micro-VMs periódicas ($\tau_1 \dots \tau_4$) + Servidor Esporádico ($S_s$) + trabajos aperiódicos ($J_1 \dots J_6$) con $U_{\text{total}} = 0.6333 \le 1.0$ (0 violaciones de plazo). |
 | **`proxmox_unschedulable.json`** | Configuración JSON de sobrecarga ($U_{\text{total}} > 1.0$) para demostrar violaciones de plazo y saturación de CPU en las 5 Micro-VMs de Proxmox. |
 | **`setup_proxmox_vms.sh`** | Script automatizado para **Proxmox VE 9.1-1** (`qm`) con interfaz CLI enriquecida mediante [`boxes`](https://github.com/ascii-boxes/boxes), emojis UTF-8 (`🚀`, `✅`, `🧹`) y barra de progreso dinámica (`0%` a `100%`). Soporta aprovisionamiento completo desde cero y modo de destrucción/limpieza total mediante la bandera `--cleanup`. |
-| **`proxmox_ss_cluster_test.py`** | Suite de pruebas automatizadas (`unittest`) que levanta los 5 nodos en procesos locales mediante sockets reales (`127.0.0.1`), valida el protocolo TCP, el quemador de CPU (`SIGSTOP`/`SIGCONT`), la inyección HTTP de trabajos aperiódicos y los invariantes matemáticos de `sporadic_server_sim.py`. |
+| **`proxmox_ss_cluster_test.py`** | Suite de pruebas automatizadas (`unittest`) que levanta los 5 nodos en procesos locales mediante sockets reales (`127.0.0.1`), valida el protocolo TCP, el quemador de CPU (`SIGSTOP`/`SIGCONT`), el portal HTTP `:8080` y los invariantes matemáticos de `sporadic_server_sim.py`. |
 
 ---
 
@@ -339,7 +331,7 @@ Al concluir la ejecución sobre las 5 Micro-VMs de Proxmox, `vm5-sporadic-server
 
 Cuando el servidor remoto **Proxmox VE 9.1-1 se encuentra completamente vacío (0 VMs creadas inicialmente)**, **no se requiere instalar ningún sistema operativo de forma manual ni abrir 5 consolas por separado**. Todo el flujo se controla de manera centralizada hacia `<IP_HOST_SERVER>` a través del puerto `<PORT_HOST_SERVER>`.
 
-### Flujo Automatizado "Zero-to-Cluster" en 4 Etapas
+### Flujo Automatizado "Zero-to-Cluster"
 
 ```text
 [Equipo Local]                    [Host Proxmox VE 9.1-1]                [Plantilla VM 9000]       [5 Micro-VMs (101..105)]
@@ -347,15 +339,15 @@ Cuando el servidor remoto **Proxmox VE 9.1-1 se encuentra completamente vacío (
        |-- 0. Tunel SSH (:1234, :8080) ----->|                                    |                            |
        |-- 1. scp scripts + ejecutar ------->|                                    |                            |
        |      ./setup_proxmox_vms.sh         |-- 2. wget Alpine 3.21 Virt .qcow2  |                            |
-       |                                     |-- 3. qm create + importdisk ------>|                            |
+       |                                     |-- 3. qm create + import-from ----->|                            |
        |                                     |      + cloudinit + qm template     |                            |
        |                                     |-- 4. qm clone 9000 -> 101..105 --->|--- Linked Clones (< 3s) -->|
        |                                     |      (Cores 1..5, RAM 128/256MB,   |                            |
        |                                     |       IPs 10.10.10.101..105)       |                            |
-       |                                     |-- 5. qm start + instalar python3 --|--------------------------->|
-       |                                     |      + scp proxmox_ss_cluster.py   |                            |
-       |<-- 6. Monitorear CPU en :1234 ------|<-----------------------------------|----------------------------|
-       |       y descargar PNG / HTML        |                                    |                            |
+       |                                     |-- 5. qm start + desplegar codigo ->|--------------------------->|
+       |<-- 6. Visualizar en vivo en --------|<-----------------------------------|----------------------------|
+       |       https://localhost:1234 (Proxmox GUI + >_ Shell)                    |                            |
+       |       http://localhost:8080  (Portal en Vivo + /dashboard + /gantt.png)  |                            |
 ```
 
 ### Paso 0: Establecer el Túnel SSH y Subir los Archivos al Host Proxmox Remoto
@@ -450,29 +442,18 @@ uv run --with matplotlib python proxmox_ss_cluster.py \
   --export-json proxmox_unschedulable_data.json
 ```
 
-### Paso 4: (Opcional) Disparar Peticiones Aperiódicas en Vivo a través del Túnel SSH
-> Mientras la simulación se encuentra en ejecución y se monitorean las gráficas de Proxmox en `https://localhost:1234`, enviar peticiones aperiódicas desde el equipo local empleando el puerto `8080` del túnel SSH (o desde el Host Proxmox hacia `10.10.10.105:8080`):
+### Paso 4: Visualización en Vivo desde Proxmox (`:1234`) y el Dashboard Web de la VM 105 (`:8080`)
+> Observar simultáneamente el comportamiento del Servidor Esporádico sin necesidad de descargar archivos manualmente:
+> 1. **En la Interfaz Web de Proxmox (`https://localhost:1234`):**
+>    * En **`Datacenter` $\rightarrow$ `Search`** (o **`Summary`** de cada VM): se visualizará cómo únicamente la Micro-VM poseedora del token sube al **100% de CPU** mientras las 4 restantes permanecen al **0% de CPU** (`SIGSTOP`).
+>    * En la **Consola `>_ Shell` de Proxmox**: se visualizará la barra de telemetría en vivo tick a tick:
+>      ```text
+>      ⚡ [t= 14.0/30.0s] VM 105 (vm5-ss -> J3) [100% CPU] | C_s:[████░░░░] 1.0/2.0 | t_A:14.0s | t_R:17.0s | Cola:2 | Miss:0
+>      ```
+> 2. **En el Portal Web y Dashboard servidos directamente desde la Micro-VM 105 (`http://localhost:8080/`):**
+>    * Abrir **`http://localhost:8080/`** en el navegador local (a través del túnel SSH del Paso 0) para visualizar el monitor en vivo de las 5 Micro-VMs, inyectar trabajos aperiódicos ($J_k$) con un clic o vía CLI (`curl "http://localhost:8080/job?name=J_urgente&work=1.5"`), e inspeccionar inmediatamente al término de la corrida el **Dashboard Interactivo HTML5 (`http://localhost:8080/dashboard`)** y el **Diagrama de Gantt (`http://localhost:8080/gantt.png`)**.
 
-```bash
-# Desde el equipo local (mediante el túnel -L 8080:10.10.10.105:8080):
-curl "http://localhost:8080/job?name=J_urgente&work=1.5"
-
-# Consultar estado en vivo (presupuesto C_s, cola FIFO y VM en ejecución):
-curl "http://localhost:8080/status"
-```
-
-> Se visualizará en el monitor web de Proxmox (`https://localhost:1234`) cómo **`vm5-sporadic-server` (VM 105) sube al 100% de CPU** (si $C_s(t) > 0$), desalojando inmediatamente a `vm3-tau3` o `vm4-tau4`.
-
-### Paso 5: Descargar los Resultados y Gráficas Generadas al Equipo Local
-> Al finalizar la corrida en `VM 105`, recuperar los artefactos generados desde `/root/results/` en el Host Proxmox hacia el equipo local:
-
-```bash
-scp -P <PORT_HOST_SERVER> \
-  "root@<IP_HOST_SERVER>:/root/results/{sporadic_server_simulation.png,sporadic_server_interactive.html,proxmox_*.csv,proxmox_*.json}" \
-  ./
-```
-
-### Paso 6: Limpieza Total del Clúster en Proxmox (`--cleanup`)
+### Paso 5: Limpieza Total del Clúster en Proxmox (`--cleanup`)
 > Una vez concluidas las pruebas, invocar el mismo script con la bandera `--cleanup` en el Host Proxmox para detener y purgar las 5 Micro-VMs (`101..105`), la plantilla base (`9000`) y los discos asociados, devolviendo el hipervisor a su estado original (`0 VMs`):
 
 ```bash
