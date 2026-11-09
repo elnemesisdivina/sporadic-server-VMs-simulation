@@ -35,14 +35,20 @@ fi
 # ── 2. Asegurar soporte de ascii-boxes (https://github.com/ascii-boxes/boxes) ─
 if ! command -v boxes >/dev/null 2>&1; then
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq boxes >/dev/null 2>&1 || true
+  apt-get update -qq >/dev/null 2>&1 || true
+  apt-get install -y -qq boxes >/dev/null 2>&1 || true
 fi
 
 render_box() {
-  if command -v boxes >/dev/null 2>&1; then
-    printf "%b\n" "$1" | boxes -d critical 2>/dev/null || printf "%b\n" "$1" | boxes -d stone
+  if command -v boxes >/dev/null 2>&1 && printf "test\n" | boxes -d critical >/dev/null 2>&1; then
+    printf "%b\n" "$1" | boxes -d critical
   else
-    printf "  ▄▄▄▄▄▄▄▄▄▄\n  CRITICAL\n+------------------------------------------------------------------------------+\n%b\n+------------------------------------------------------------------------------+\n" "$1"
+    printf "\033[38;5;203m  ▄▄▄▄▄▄▄▄▄▄\033[0m\n"
+    printf "\033[48;5;203;97;1m  CRITICAL  \033[0m\033[38;5;203m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄\033[0m\n"
+    while IFS= read -r line; do
+      printf "\033[48;5;203m \033[48;5;52;97m  %-74s  \033[48;5;203m \033[0m\n" "${line}"
+    done < <(printf "%b\n" "$1")
+    printf "\033[38;5;203m▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\033[0m\n"
   fi
 }
 
@@ -63,8 +69,11 @@ run_with_progress() {
     fi
     local filled=$((pct * bar_width / 100))
     local empty=$((bar_width - filled))
-    local bar
-    bar=$(printf "%${filled}s" | tr ' ' '█')$(printf "%${empty}s" | tr ' ' '░')
+    local filled_str=""
+    local empty_str=""
+    [[ "${filled}" -gt 0 ]] && printf -v filled_str "%${filled}s" ""
+    [[ "${empty}" -gt 0 ]] && printf -v empty_str "%${empty}s" ""
+    local bar="${filled_str// /█}${empty_str// /░}"
     printf "\r⏳ %-46s [%s] %3d%%" "${label}" "${bar}" "${pct}"
     sleep 0.15
   done
@@ -76,8 +85,9 @@ run_with_progress() {
     exit 1
   fi
 
-  local full_bar
-  full_bar=$(printf "%${bar_width}s" | tr ' ' '█')
+  local full_str=""
+  printf -v full_str "%${bar_width}s" ""
+  local full_bar="${full_str// /█}"
   printf "\r✅ %-46s [%s] 100%%\n" "${label}" "${full_bar}"
 }
 

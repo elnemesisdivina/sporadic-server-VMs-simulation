@@ -15,17 +15,24 @@ import math
 import os
 from typing import Any, Optional
 
-import matplotlib
+try:
+  import matplotlib
 
-if not os.environ.get("DISPLAY"):
-  matplotlib.use("Agg")
+  if not os.environ.get("DISPLAY"):
+    matplotlib.use("Agg")
 
-# pylint: disable=g-import-not-at-top
-import matplotlib.lines as mlines
-import matplotlib.patches as mpatches
-import matplotlib.pyplot as plt
-
-# pylint: enable=g-import-not-at-top
+  # pylint: disable=g-import-not-at-top
+  import matplotlib.lines as mlines
+  import matplotlib.patches as mpatches
+  import matplotlib.pyplot as plt
+  # pylint: enable=g-import-not-at-top
+  _HAS_MATPLOTLIB = True
+except ImportError:
+  _HAS_MATPLOTLIB = False
+  matplotlib = None  # type: ignore
+  mlines = None  # type: ignore
+  mpatches = None  # type: ignore
+  plt = None  # type: ignore
 
 VERSION = "2.1.0"
 
@@ -852,13 +859,28 @@ def plot_simulation(
     server_config: Configuración del Servidor Esporádico.
     interactive_html: Ruta opcional para exportar el dashboard HTML interactivo.
   """
-  if not show or not os.environ.get("DISPLAY"):
-    plt.switch_backend("Agg")
-
   if periodic_tasks is None:
     periodic_tasks = PERIODIC_TASKS
   if server_config is None:
     server_config = SERVER_CONFIG
+
+  if not _HAS_MATPLOTLIB:
+    if interactive_html:
+      export_interactive_html(
+          result,
+          interactive_html,
+          horizon=horizon,
+          periodic_tasks=periodic_tasks,
+          server_config=server_config,
+      )
+    print(
+        "[i] Nota: matplotlib no está instalado en esta Micro-VM; se generó el "
+        "Dashboard Interactivo HTML5/SVG autónomo (cero dependencias)."
+    )
+    return
+
+  if not show or not os.environ.get("DISPLAY"):
+    plt.switch_backend("Agg")
 
   # Orden de pistas: Tareas periódicas arriba por prioridad decreciente, Servidor abajo
   ordered_tracks = sorted(

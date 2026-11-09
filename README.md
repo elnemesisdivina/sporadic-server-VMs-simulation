@@ -408,38 +408,36 @@ ssh -p <PORT_HOST_SERVER> root@<IP_HOST_SERVER> "chmod +x /root/setup_proxmox_vm
 > Mediante `--ipconfig0 "ip=10.10.10.101/24"` de Cloud-Init sobre el switch virtual `vmbr0` de Proxmox, las 5 VMs quedan conectadas en Capa 2 con IPs fijas (`10.10.10.101` a `10.10.10.105`) desde el primer segundo de arranque, sin depender de un servidor DHCP externo. Adicionalmente, para instalar `python3` vía `apk`, el script configura automáticamente el enlace de salida o preinstala el paquete en la imagen base antes de clonar.
 
 ### Paso 2: Despliegue Automático del Código desde el Host Proxmox hacia las 5 Micro-VMs
-> Una vez iniciadas las 5 Micro-VMs (`10.10.10.101` .. `10.10.10.105`), transferir los archivos (`scp`) desde el Host Proxmox y levantar los demonios trabajadores en segundo plano (`ssh`):
+> Una vez iniciadas las 5 Micro-VMs (`10.10.10.101` .. `10.10.10.105`, que ya incluyen `python3` preinstalado de fábrica en la imagen Alpine 3.21 Cloud sin requerir salida a Internet), transferir los archivos (`scp`) desde el Host Proxmox y levantar los 4 demonios trabajadores en segundo plano (`ssh`):
 
 ```bash
-# Copiar automáticamente proxmox_ss_cluster.py a las 5 Micro-VMs e iniciar los 4 workers:
+# 1. Copiar archivos del Servidor Esporádico a la Micro-VM 105:
+scp -o StrictHostKeyChecking=no \
+  proxmox_ss_cluster.py sporadic_server_sim.py \
+  proxmox_schedulable.json proxmox_unschedulable.json \
+  root@10.10.10.105:/root/
+
+# 2. Copiar proxmox_ss_cluster.py a las 4 Micro-VMs periódicas (101..104) e iniciar los workers:
 for i in 1 2 3 4; do
   VM_IP="10.10.10.$((100 + i))"
-  scp proxmox_ss_cluster.py root@${VM_IP}:/root/
-  ssh root@${VM_IP} "nohup python3 /root/proxmox_ss_cluster.py --role worker --task-id tau${i} --server-host 10.10.10.105 > /root/worker.log 2>&1 &"
+  scp -o StrictHostKeyChecking=no proxmox_ss_cluster.py root@${VM_IP}:/root/
+  ssh -o StrictHostKeyChecking=no root@${VM_IP} \
+    "pkill -f proxmox_ss_cluster.py 2>/dev/null || true; nohup python3 /root/proxmox_ss_cluster.py --role worker --task-id tau${i} --server-host 10.10.10.105 > /root/worker.log 2>&1 &"
 done
 ```
 
 ### Paso 3: Iniciar el Servidor Esporádico y Coordinador en la Micro-VM 105 (Caso Planificable vs. Caso No Planificable)
-> Ejecutar en `vm5-sporadic-server` con `--time-scale 4.0` seleccionando el archivo JSON deseado (o cualquier JSON modificado manualmente) para evaluar tanto el escenario planificable ($U_{\text{total}} = 0.6333 \le 1.0$) como el escenario en sobrecarga ($U_{\text{total}} = 1.1833 > 1.0$):
+> Ejecutar desde el Host Proxmox hacia `vm5-sporadic-server` (`10.10.10.105`) con `--time-scale 4.0` seleccionando el archivo JSON deseado para evaluar tanto el escenario planificable ($U_{\text{total}} = 0.6333 \le 1.0$) como el escenario en sobrecarga ($U_{\text{total}} = 1.1833 > 1.0$):
 
 ```bash
 # 1. Ejecutar el Caso Planificable (U_total = 0.6333 <= 1.0, 0 violaciones de plazo):
-uv run --with matplotlib python proxmox_ss_cluster.py \
-  --role server \
-  --tasks-json proxmox_schedulable.json \
-  --time-scale 4.0 \
-  --no-show \
-  --export-csv proxmox_schedulable_trace.csv \
-  --export-json proxmox_schedulable_data.json
+ssh -t -o StrictHostKeyChecking=no root@10.10.10.105 \
+  "python3 /root/proxmox_ss_cluster.py --role server --tasks-json /root/proxmox_schedulable.json --time-scale 4.0 --no-show --export-csv /root/proxmox_schedulable_trace.csv --export-json /root/proxmox_schedulable_data.json"
 
 # 2. Ejecutar el Caso No Planificable / Sobrecarga (U_total = 1.1833 > 1.0, violaciones en tau3 y tau4):
-uv run --with matplotlib python proxmox_ss_cluster.py \
-  --role server \
-  --tasks-json proxmox_unschedulable.json \
-  --time-scale 4.0 \
-  --no-show \
-  --export-csv proxmox_unschedulable_trace.csv \
-  --export-json proxmox_unschedulable_data.json
+#    (Reiniciar antes los 4 workers del Paso 2 y lanzar con proxmox_unschedulable.json):
+ssh -t -o StrictHostKeyChecking=no root@10.10.10.105 \
+  "python3 /root/proxmox_ss_cluster.py --role server --tasks-json /root/proxmox_unschedulable.json --time-scale 4.0 --no-show --export-csv /root/proxmox_unschedulable_trace.csv --export-json /root/proxmox_unschedulable_data.json"
 ```
 
 ### Paso 4: Visualización en Vivo desde Proxmox (`:1234`) y el Dashboard Web de la VM 105 (`:8080`)
