@@ -351,22 +351,24 @@ Cuando el servidor remoto **Proxmox VE 9.1-1 se encuentra completamente vacío (
 ```
 
 ### Paso 0: Establecer el Túnel SSH y Subir los Archivos al Host Proxmox Remoto
-> Ejecutar desde una terminal en el equipo local para habilitar el acceso web a Proxmox (`https://localhost:1234`), el canal de inyección HTTP (`http://localhost:8080`) y transferir los scripts al servidor remoto:
+> Ejecutar desde una terminal en el equipo local para habilitar el acceso web a Proxmox (`https://localhost:1234`), el portal en vivo del Servidor Esporádico (`http://localhost:8080`) y transferir los scripts al servidor remoto (o descargarlos directamente desde GitHub sin requerir `git` en Proxmox):
 
 ```bash
-# 1. En una pestaña de terminal, levantar el túnel SSH comprimido (-C) en segundo plano (-N):
+# 1. En una pestaña de terminal en tu equipo local, levantar el túnel SSH (-L 1234 y -L 8080):
 #    - Puerto local 1234 -> Interfaz Web de Proxmox (https://localhost:8006)
-#    - Puerto local 8080 -> API HTTP del Servidor Esporádico en VM 105 (10.10.10.105:8080)
+#    - Puerto local 8080 -> Portal Web y Dashboard en VM 105 (10.10.10.105:8080)
 ssh -p <PORT_HOST_SERVER> -L 1234:localhost:8006 -L 8080:10.10.10.105:8080 -N -C root@<IP_HOST_SERVER>
 
-# 2. Abrir en el navegador local la interfaz web de Proxmox VE 9.1-1:
-#    URL: https://localhost:1234  (Usuario: root / Realm: Linux PAM standard authentication)
+# 2. Abrir en el navegador local:
+#    - Interfaz Web de Proxmox VE 9.1-1 : https://localhost:1234
+#    - Portal en Vivo y Dashboard VM 105: http://localhost:8080/
 
-# 3. En otra pestaña de terminal, copiar los scripts del proyecto al Host Proxmox:
-scp -P <PORT_HOST_SERVER> \
-  setup_proxmox_vms.sh proxmox_ss_cluster.py sporadic_server_sim.py \
-  proxmox_schedulable.json proxmox_unschedulable.json \
-  root@<IP_HOST_SERVER>:/root/
+# 3. En la consola del Host Proxmox (por SSH o >_ Shell), descargar la última versión del repositorio sin requerir git:
+mkdir -p /root/sporadic-server-VMs-simulation
+wget -qO- https://github.com/elnemesisdivina/sporadic-server-VMs-simulation/archive/refs/heads/main.tar.gz | tar -xz -C /tmp
+cp -f /tmp/sporadic-server-VMs-simulation-main/* /root/sporadic-server-VMs-simulation/
+rm -rf /tmp/sporadic-server-VMs-simulation-main
+cd /root/sporadic-server-VMs-simulation
 ```
 
 ### Paso 1: Creación Automatizada desde Cero en el Host Proxmox 9.1-1 (`setup_proxmox_vms.sh`)
@@ -408,9 +410,11 @@ ssh -p <PORT_HOST_SERVER> root@<IP_HOST_SERVER> "chmod +x /root/setup_proxmox_vm
 > Mediante `--ipconfig0 "ip=10.10.10.101/24"` de Cloud-Init sobre el switch virtual `vmbr0` de Proxmox, las 5 VMs quedan conectadas en Capa 2 con IPs fijas (`10.10.10.101` a `10.10.10.105`) desde el primer segundo de arranque, sin depender de un servidor DHCP externo. Adicionalmente, para instalar `python3` vía `apk`, el script configura automáticamente el enlace de salida o preinstala el paquete en la imagen base antes de clonar.
 
 ### Paso 2: Despliegue Automático del Código desde el Host Proxmox hacia las 5 Micro-VMs
-> Una vez iniciadas las 5 Micro-VMs (`10.10.10.101` .. `10.10.10.105`, que ya incluyen `python3` preinstalado de fábrica en la imagen Alpine 3.21 Cloud sin requerir salida a Internet), transferir los archivos (`scp`) desde el Host Proxmox y levantar los 4 demonios trabajadores en segundo plano (`ssh`):
+> Una vez iniciadas las 5 Micro-VMs (`10.10.10.101` .. `10.10.10.105`, que ya incluyen `python3` preinstalado de fábrica en la imagen Alpine 3.21 Cloud sin requerir salida a Internet), transferir los archivos (`scp`) desde el Host Proxmox y levantar los 4 demonios trabajadores en segundo plano (`ssh` con `killall python3` y redirección `< /dev/null`):
 
 ```bash
+cd /root/sporadic-server-VMs-simulation
+
 # 1. Copiar archivos del Servidor Esporádico a la Micro-VM 105:
 scp -o StrictHostKeyChecking=no \
   proxmox_ss_cluster.py sporadic_server_sim.py \
@@ -421,35 +425,50 @@ scp -o StrictHostKeyChecking=no \
 for i in 1 2 3 4; do
   VM_IP="10.10.10.$((100 + i))"
   scp -o StrictHostKeyChecking=no proxmox_ss_cluster.py root@${VM_IP}:/root/
+  ssh -o StrictHostKeyChecking=no root@${VM_IP} "killall python3 2>/dev/null || true"
   ssh -o StrictHostKeyChecking=no root@${VM_IP} \
-    "pkill -f proxmox_ss_cluster.py 2>/dev/null || true; nohup python3 /root/proxmox_ss_cluster.py --role worker --task-id tau${i} --server-host 10.10.10.105 > /root/worker.log 2>&1 &"
+    "nohup python3 /root/proxmox_ss_cluster.py --role worker --task-id tau${i} --server-host 10.10.10.105 < /dev/null > /root/worker.log 2>&1 &"
 done
 ```
 
 ### Paso 3: Iniciar el Servidor Esporádico y Coordinador en la Micro-VM 105 (Caso Planificable vs. Caso No Planificable)
-> Ejecutar desde el Host Proxmox hacia `vm5-sporadic-server` (`10.10.10.105`) con `--time-scale 4.0` seleccionando el archivo JSON deseado para evaluar tanto el escenario planificable ($U_{\text{total}} = 0.6333 \le 1.0$) como el escenario en sobrecarga ($U_{\text{total}} = 1.1833 > 1.0$):
+> Ejecutar desde el Host Proxmox hacia `vm5-sporadic-server` (`10.10.10.105`) seleccionando la escala temporal (`--time-scale`) y el archivo JSON deseado:
+> * **`--time-scale 4.0` (Corrida rápida de 2 minutos):** Ideal para verificar rápidamente las tablas RTA, el portal en vivo `http://localhost:8080/` y el Dashboard HTML5 `http://localhost:8080/dashboard`.
+> * **`--time-scale 15.0` (Modo Visualización de CPU en Proxmox VE):** Dado que el demonio `pvestatd` de Proxmox VE muestrea el uso de CPU cada **10 segundos** (y las gráficas RRD promedian cada **60 segundos**), usar `--time-scale 15.0` hace que cada $1.0\text{ u}$ de cómputo dure **15 segundos reales al 100% CPU**, permitiendo ver los picos al **100% CPU** con total nitidez directamente en los paneles de CPU de Proxmox.
 
 ```bash
-# 1. Ejecutar el Caso Planificable (U_total = 0.6333 <= 1.0, 0 violaciones de plazo):
+# Opción A: Modo Visualización de CPU en Proxmox VE (--time-scale 15.0 -> 1.0u = 15s reales al 100% CPU):
+ssh -t -o StrictHostKeyChecking=no root@10.10.10.105 \
+  "python3 /root/proxmox_ss_cluster.py --role server --tasks-json /root/proxmox_schedulable.json --time-scale 15.0 --no-show --export-csv /root/proxmox_schedulable_trace.csv --export-json /root/proxmox_schedulable_data.json"
+
+# Opción B: Corrida Rápida Caso Planificable (U_total = 0.6333 <= 1.0, --time-scale 4.0):
 ssh -t -o StrictHostKeyChecking=no root@10.10.10.105 \
   "python3 /root/proxmox_ss_cluster.py --role server --tasks-json /root/proxmox_schedulable.json --time-scale 4.0 --no-show --export-csv /root/proxmox_schedulable_trace.csv --export-json /root/proxmox_schedulable_data.json"
 
-# 2. Ejecutar el Caso No Planificable / Sobrecarga (U_total = 1.1833 > 1.0, violaciones en tau3 y tau4):
+# Opción C: Caso No Planificable / Sobrecarga (U_total = 1.1833 > 1.0, violaciones en tau3 y tau4):
 #    (Reiniciar antes los 4 workers del Paso 2 y lanzar con proxmox_unschedulable.json):
 ssh -t -o StrictHostKeyChecking=no root@10.10.10.105 \
-  "python3 /root/proxmox_ss_cluster.py --role server --tasks-json /root/proxmox_unschedulable.json --time-scale 4.0 --no-show --export-csv /root/proxmox_unschedulable_trace.csv --export-json /root/proxmox_unschedulable_data.json"
+  "python3 /root/proxmox_ss_cluster.py --role server --tasks-json /root/proxmox_unschedulable.json --time-scale 15.0 --no-show --export-csv /root/proxmox_unschedulable_trace.csv --export-json /root/proxmox_unschedulable_data.json"
 ```
 
-### Paso 4: Visualización en Vivo desde Proxmox (`:1234`) y el Dashboard Web de la VM 105 (`:8080`)
-> Observar simultáneamente el comportamiento del Servidor Esporádico sin necesidad de descargar archivos manualmente:
-> 1. **En la Interfaz Web de Proxmox (`https://localhost:1234`):**
->    * En **`Datacenter` $\rightarrow$ `Search`** (o **`Summary`** de cada VM): se visualizará cómo únicamente la Micro-VM poseedora del token sube al **100% de CPU** mientras las 4 restantes permanecen al **0% de CPU** (`SIGSTOP`).
->    * En la **Consola `>_ Shell` de Proxmox**: se visualizará la barra de telemetría en vivo tick a tick:
+### Paso 4: Cómo Visualizar el Consumo de CPU (`0%` vs. `100%`) y el Presupuesto $C_s(t)$ Directamente en Proxmox VE y en el Portal Web
+> Para observar de forma concluyente cómo las Micro-VMs `101..104` ejecutan las tareas periódicas ($\tau_1 \dots \tau_4$) según su prioridad Rate-Monotonic y cómo `vm5-sporadic-server` (`105`) sólo consume CPU cuando tiene trabajos aperiódicos ($J_k$) y presupuesto $C_s(t) > 0$, seguir estos pasos mientras corre el comando con `--time-scale 15.0`:
+>
+> 1. **En el Panel de CPU de Proxmox VE (`https://localhost:1234`):**
+>    * **Vista comparativa en tiempo real de las 5 Micro-VMs (`Datacenter` $\rightarrow$ `Search`):** En el árbol izquierdo de Proxmox, hacer clic en **`Datacenter`** (o en el nodo `pve`) y seleccionar **`Search`**. Se mostrarán las barras de **`CPU Usage`** de las 5 VMs (`101..105`) una debajo de la otra actualizándose en vivo:
+>      * En $t = 0.0 \to 1.0\text{ u}$ (`15s` reales): **`101 (vm1-tau1)`** sube al **`100% CPU`** mientras `102, 103, 104, 105` están al **`0% CPU`**.
+>      * En $t = 1.0 \to 2.0\text{ u}$ (`15s` reales): **`101`** cae al **`0%`** y **`102 (vm2-tau2)`** sube al **`100% CPU`**.
+>      * En $t = 2.0 \to 3.0\text{ u}$ (llega `J1` o un trabajo aperiódico inyectado): **`105 (vm5-sporadic-server)`** desaloja a `103`/`104` (porque $P_s=3 > P_3=2 > P_4=1$), sube al **`100% CPU`** y descuenta su presupuesto $C_s(t)$ de `2.0` a `1.0`.
+>      * En cuanto $C_s(t)$ llega a **`0.0`**, **`105 (vm5-sporadic-server)`** cae inmediatamente al **`0% CPU`** (`SIGSTOP`), incluso si hay decenas de trabajos aperiódicos esperando en la cola FIFO, y permanece en `0%` hasta el instante exacto de su recarga $t_R = t_A + 12.0$.
+>    * **Gráfica histórica de CPU (`105 (vm5-sporadic-server)` $\rightarrow$ `Summary`):** En el desplegable superior derecho de la gráfica **`CPU usage`**, cambiar de **`Average`** a **`Maximum`** (junto a `Hour`). Esto evita que Proxmox promedie bloques de 60 segundos y muestra los escalones cuadrados de activación del Servidor Esporádico.
+> 2. **En la Consola `>_ Shell` donde corre el Paso 3:**
+>    * Se actualiza tick a tick la barra de telemetría sincronizada con Proxmox:
 >      ```text
 >      ⚡ [t= 14.0/30.0s] VM 105 (vm5-ss -> J3) [100% CPU] | C_s:[████░░░░] 1.0/2.0 | t_A:14.0s | t_R:17.0s | Cola:2 | Miss:0
 >      ```
-> 2. **En el Portal Web y Dashboard servidos directamente desde la Micro-VM 105 (`http://localhost:8080/`):**
->    * Abrir **`http://localhost:8080/`** en el navegador local (a través del túnel SSH del Paso 0) para visualizar el monitor en vivo de las 5 Micro-VMs, inyectar trabajos aperiódicos ($J_k$) con un clic o vía CLI (`curl "http://localhost:8080/job?name=J_urgente&work=1.5"`), e inspeccionar inmediatamente al término de la corrida el **Dashboard Interactivo HTML5 (`http://localhost:8080/dashboard`)** y el **Diagrama de Gantt (`http://localhost:8080/gantt.png`)**.
+> 3. **En el Portal Web y Dashboard servidos desde la Micro-VM 105 (`http://localhost:8080/`):**
+>    * **`http://localhost:8080/`:** Muestra los 5 indicadores de las Micro-VMs (`100% CPU` en verde cuando tienen el token vs. `0% CPU` en reposo), la barra de presupuesto $C_s(t)$ y el botón **`⚡ Inyectar Jₖ`** (que numera automáticamente cada trabajo inyectado como `J_urgente_1`, `J_urgente_2`, etc.).
+>    * **`http://localhost:8080/dashboard`:** Al concluir los $30.0\text{ s}$ lógicos, abre el reproductor interactivo HTML5 con el diagrama de Gantt de las 5 VMs, la curva $C_s(t)$ diente de sierra y la tabla de trabajos aperiódicos diferenciando en verde los trabajos **`Completed`** y en ámbar los **`Incomplete`** que quedaron esperando recarga de presupuesto al cierre del horizonte.
 
 ### Paso 5: Limpieza Total del Clúster en Proxmox (`--cleanup`)
 > Una vez concluidas las pruebas, invocar el mismo script con la bandera `--cleanup` en el Host Proxmox para detener y purgar las 5 Micro-VMs (`101..105`), la plantilla base (`9000`) y los discos asociados, devolviendo el hipervisor a su estado original (`0 VMs`):

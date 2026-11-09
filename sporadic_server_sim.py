@@ -1310,9 +1310,18 @@ def export_interactive_html(
           "completion": rec.completion_time,
           "response": rec.response_time,
           "waiting": rec.waiting_time,
-          "status": "Completed" if rec.completion_time else "Incomplete",
+          "remaining": round(rec.remaining_time, 2),
+          "completed": rec.completion_time is not None,
+          "status": (
+              "Completed"
+              if rec.completion_time is not None
+              else f"Incomplete ({rec.remaining_time:.1f}u rest.)"
+          ),
       }
-      for name, rec in sorted(result.job_records.items())
+      for name, rec in sorted(
+          result.job_records.items(),
+          key=lambda item: (item[1].job.arrival_time, item[0]),
+      )
   ]
 
   sched_data = {}
@@ -1337,8 +1346,11 @@ def export_interactive_html(
     comp_str = f"{j['completion']:.1f}" if j["completion"] is not None else "—"
     resp_str = f"{j['response']:.1f}" if j["response"] is not None else "—"
     wait_str = f"{j['waiting']:.1f}" if j["waiting"] is not None else "—"
+    badge_cls = "badge-ok" if j["completed"] else "badge-waiting"
     rows_html.append(
-        f"<tr><td><b>{j['name']}</b></td><td>{j['arrival']:.1f}</td><td>{j['compute']:.1f}</td><td>{comp_str}</td><td>{resp_str}</td><td>{wait_str}</td><td><span class='badge badge-ok'>{j['status']}</span></td></tr>"
+        f"<tr><td><b>{j['name']}</b></td><td>{j['arrival']:.1f}</td><td>{j['compute']:.1f}</td>"
+        f"<td>{comp_str}</td><td>{resp_str}</td><td>{wait_str}</td>"
+        f"<td><span class='badge {badge_cls}'>{j['status']}</span></td></tr>"
     )
   table_rows = "".join(rows_html)
 
@@ -2232,18 +2244,21 @@ def print_summary(result: SimulationResult) -> None:
     print(f"    {idx:3d} | {rep.replenishment_time:5.1f} | +{rep.amount:.1f}")
 
   print("\n[+] Estado de Trabajos Aperiódicos y Métricas de QoS:")
-  print("    Trabajo | Llegada | Cómputo | Fin      | T. Resp | T. Espera | Estado")
-  print("    " + "-" * 68)
-  for name, rec in sorted(result.job_records.items()):
+  print("    Trabajo     | Llegada | Cómputo | Fin      | T. Resp | T. Espera | Estado")
+  print("    " + "-" * 72)
+  for name, rec in sorted(
+      result.job_records.items(),
+      key=lambda item: (item[1].job.arrival_time, item[0]),
+  ):
     if rec.completion_time is not None:
       resp = rec.response_time if rec.response_time is not None else (rec.completion_time - rec.job.arrival_time)
       wait = rec.waiting_time if rec.waiting_time is not None else (resp - rec.job.compute_time)
       print(
-          f"    {name:7s} | {rec.job.arrival_time:7.1f} | {rec.job.compute_time:7.1f} | {rec.completion_time:8.1f} | {resp:7.1f} | {wait:9.1f} | Completado"
+          f"    {name:11s} | {rec.job.arrival_time:7.1f} | {rec.job.compute_time:7.1f} | {rec.completion_time:8.1f} | {resp:7.1f} | {wait:9.1f} | Completado"
       )
     else:
       print(
-          f"    {name:7s} | {rec.job.arrival_time:7.1f} | {rec.job.compute_time:7.1f} | {'—':>8s} | {'—':>7s} | {'—':>9s} | Incompleto ({rec.remaining_time:.1f} u rest.)"
+          f"    {name:11s} | {rec.job.arrival_time:7.1f} | {rec.job.compute_time:7.1f} | {'—':>8s} | {'—':>7s} | {'—':>9s} | Incompleto ({rec.remaining_time:.1f} u rest.)"
       )
 
   if result.schedulability and result.schedulability.avg_aperiodic_response_time:

@@ -229,8 +229,15 @@ class ProxmoxSporadicServerClusterTest(unittest.TestCase):
         self.assertEqual(job_resp["status"], "enqueued")
         self.assertEqual(job_resp["name"], "J_urgente")
 
+      with urlopen(
+          f"http://127.0.0.1:{http_port}/job?name=J_urgente&work=0.5", timeout=2.0
+      ) as resp:
+        job_resp2 = json.loads(resp.read().decode("utf-8"))
+        self.assertEqual(job_resp2["status"], "enqueued")
+
       result = coord.run()
       self.assertIn("J_urgente", result.job_records)
+      self.assertIn("J_urgente_2", result.job_records)
       self.assertIsNotNone(result.job_records["J_urgente"].completion_time)
     finally:
       coord.close_all()

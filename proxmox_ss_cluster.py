@@ -334,27 +334,33 @@ def _build_live_portal_html() -> str:
   </div>
 
   <div id="artifacts-panel" class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;margin-bottom:1rem;">
-      <h3 style="margin:0;color:#34d399;">✅ Simulación Completada — Diagrama de Gantt y Curva Cₛ(t) Generados en VM 105</h3>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;margin-bottom:0.5rem;">
+      <h3 style="margin:0;color:#34d399;">✅ Simulación Completada — Dashboard Interactivo HTML5 Generado en VM 105</h3>
       <div>
-        <a href="/dashboard" class="btn btn-blue">🔍 Ver Dashboard Interactivo HTML5 Completo</a>
-        <a href="/gantt.png" download="sporadic_server_simulation.png" class="btn" style="margin-left:0.5rem;">⬇️ Guardar PNG</a>
+        <a href="/dashboard" class="btn btn-blue">🔍 Ver Dashboard Interactivo HTML5 Completo (/dashboard)</a>
+        <a id="png-dl-btn" href="/gantt.png" download="sporadic_server_simulation.png" class="btn" style="display:none;margin-left:0.5rem;">⬇️ Guardar PNG</a>
       </div>
     </div>
-    <img id="gantt-img" src="" alt="Diagrama de Gantt y Presupuesto Cs(t)" style="width:100%;border-radius:0.5rem;border:1px solid #334155;" />
+    <img id="gantt-img" src="" alt="Diagrama de Gantt y Presupuesto Cs(t)" style="display:none;width:100%;margin-top:0.75rem;border-radius:0.5rem;border:1px solid #334155;" />
   </div>
 
   <script>
     let artifactsLoaded = false;
+    let liveJobSeq = 1;
     async function sendJob(ev) {
       ev.preventDefault();
-      const name = document.getElementById('jname').value || 'J_live';
+      const inputEl = document.getElementById('jname');
+      const name = inputEl.value || `J_urgente_${liveJobSeq}`;
       const work = document.getElementById('jwork').value || '1.0';
       const r = await fetch(`/job?name=${encodeURIComponent(name)}&work=${encodeURIComponent(work)}`);
       const d = await r.json();
-      document.getElementById('job-msg').textContent = d.status === 'enqueued'
-        ? `✔ Trabajo ${d.name} (C=${d.compute_time}) encolado en VM 105`
-        : `❌ Error: ${d.error}`;
+      if (d.status === 'enqueued') {
+        liveJobSeq += 1;
+        inputEl.value = `J_urgente_${liveJobSeq}`;
+        document.getElementById('job-msg').textContent = `✔ Trabajo ${d.name} (C=${d.compute_time}) encolado en VM 105`;
+      } else {
+        document.getElementById('job-msg').textContent = `❌ Error: ${d.error}`;
+      }
       return false;
     }
     function highlightVM(runner, job) {
@@ -396,7 +402,12 @@ def _build_live_portal_html() -> str:
         if (s.artifacts_ready && !artifactsLoaded) {
           artifactsLoaded = true;
           document.getElementById('artifacts-panel').style.display = 'block';
-          document.getElementById('gantt-img').src = '/gantt.png?t=' + Date.now();
+          if (s.png_ready) {
+            document.getElementById('png-dl-btn').style.display = 'inline-block';
+            const img = document.getElementById('gantt-img');
+            img.style.display = 'block';
+            img.src = '/gantt.png?t=' + Date.now();
+          }
         }
       } catch (e) {}
     }
@@ -496,11 +507,11 @@ class SporadicServerCoordinator:
     """Registra las rutas del Dashboard HTML5 y PNG generados para servirlos en :8080."""
     self._dashboard_html_path = html_path
     self._gantt_png_path = png_path
+    has_png = bool(png_path and os.path.isfile(png_path))
+    has_html = bool(html_path and os.path.isfile(html_path))
     with self._status_lock:
-      self._live_status["artifacts_ready"] = bool(
-          (html_path and os.path.isfile(html_path))
-          or (png_path and os.path.isfile(png_path))
-      )
+      self._live_status["png_ready"] = has_png
+      self._live_status["artifacts_ready"] = has_html or has_png
 
   def _runner_to_vm_label(self, runner_name: str, job_label: str = "") -> str:
     """Traduce el nombre de tarea al identificador de Micro-VM en Proxmox."""
@@ -807,9 +818,10 @@ class SporadicServerCoordinator:
     periodic_deadlines: list[tuple[float, str]] = []
     aperiodic_arrivals: list[tuple[float, str]] = []
     deadline_misses: list[tuple[float, str]] = []
+    scheduled_aperiodic_jobs = list(self.aperiodic_jobs)
     job_records: dict[str, ssim.JobRecord] = {
         j.name: ssim.JobRecord(job=j, remaining_time=j.compute_time)
-        for j in self.aperiodic_jobs
+        for j in scheduled_aperiodic_jobs
     }
 
     current_holder: Optional[str] = None
@@ -853,7 +865,7 @@ class SporadicServerCoordinator:
               )
 
         # ── PASO 3: ENCOLAR PETICIONES APERIÓDICAS (JSON + HTTP EN VIVO) ────
-        for ajob in self.aperiodic_jobs:
+        for ajob in scheduled_aperiodic_jobs:
           if ssim.to_ticks(ajob.arrival_time, self.dt) == k:
             aperiodic_queue.append(
                 ssim._AperiodicJobInstance(
@@ -865,7 +877,13 @@ class SporadicServerCoordinator:
 
         with self._live_jobs_lock:
           if self._live_injected_jobs:
-            for live_name, live_work in self._live_injected_jobs:
+            for raw_name, live_work in self._live_injected_jobs:
+              live_name = raw_name
+              if live_name in job_records:
+                seq = 2
+                while f"{raw_name}_{seq}" in job_records:
+                  seq += 1
+                live_name = f"{raw_name}_{seq}"
               live_job = ssim.AperiodicJob(
                   name=live_name,
                   arrival_time=round(current_time, 4),
